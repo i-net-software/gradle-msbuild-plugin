@@ -11,6 +11,8 @@ import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.TaskAction
 import org.gradle.internal.os.OperatingSystem
+import org.gradle.process.ExecOperations
+import javax.inject.Inject
 
 
 class Msbuild extends ConventionTask {
@@ -61,6 +63,8 @@ class Msbuild extends ConventionTask {
     IExecutableResolver resolver
     @Internal
     Boolean parseProject = true
+    @Inject
+    ExecOperations getExecOps() {}
 
     Msbuild() {
         description = 'Executes MSBuild on the specified project/solution'
@@ -140,7 +144,7 @@ class Msbuild extends ConventionTask {
         def parserDll = new File(tempDir, 'ProjectFileParser.dll')
         def parseOutputStream = new ByteArrayOutputStream()
         def errorOutputStream = new ByteArrayOutputStream()
-        def parser = project.exec { exec ->
+        def parser = execOps.exec { exec ->
             exec.commandLine('dotnet', '--roll-forward', 'Major', parserDll)
             exec.args(file.toString(), JsonOutput.toJson(getInitProperties()).replace('"', '\''))
             exec.standardOutput = parseOutputStream
