@@ -73,7 +73,7 @@ tasks.register('generateZip', Zip) {
 }
 
 tasks.register('downloadVsWhere', de.undercouch.gradle.tasks.download.Download) {
-    src 'https://github.com/Microsoft/vswhere/releases/download/2.8.4/vswhere.exe'
+    src 'https://github.com/Microsoft/vswhere/releases/download/3.1.7/vswhere.exe'
     dest "$temporaryDir/vswhere.exe"
 }
 
@@ -189,3 +189,9 @@ afterEvaluate {
 
 // MSBuild-specific: Process resources depends on vswhere download
 processResources.dependsOn downloadVsWhere
+// sourcesJar also needs downloadVsWhere since it reads from sourceSets
+afterEvaluate {
+    tasks.named('sourcesJar').configure {
+        dependsOn downloadVsWhere
+    }
+}
