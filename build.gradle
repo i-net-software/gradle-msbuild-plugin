@@ -1,16 +1,21 @@
 plugins {
-    id 'com.gradle.plugin-publish' version '0.15.0'
-    id 'com.itiviti.dotnet' version '2.0.1'
-    id 'net.researchgate.release' version '2.6.0'
-    id 'de.undercouch.download' version '4.1.2'
+    id 'java-gradle-plugin'
+    id 'com.gradle.plugin-publish' version '1.2.1' // Updated for Gradle 9 compatibility
+    id 'signing' // Required for Maven Central
+    id 'io.github.gradle-nexus.publish-plugin' version '2.0.0' // Automates Sonatype Nexus publishing
+    id 'com.itiviti.dotnet' version '2.0.1' // MSBuild-specific: for ProjectFileParser build
+    id 'de.undercouch.download' version '4.1.2' // MSBuild-specific: for vswhere.exe download
+    // id 'net.researchgate.release' version '2.6.0' // Temporarily disabled for Gradle 9 compatibility
 }
 
-group = 'com.ullink.gradle'
-
-apply plugin: 'java-gradle-plugin'
 apply plugin: 'groovy'
-apply plugin: 'com.gradle.plugin-publish'
 apply plugin: 'maven-publish'
+
+group = 'de.inetsoftware.gradle'
+
+repositories {
+    mavenCentral()
+}
 
 description 'Gradle plugin for MSBuild project build.'
 
@@ -21,12 +26,28 @@ java {
 }
 
 dependencies {
-    testImplementation(platform('org.junit:junit-bom:5.10.1'))
-    testImplementation('org.junit.jupiter:junit-jupiter')
-    testImplementation 'org.spockframework:spock-core:2.3-groovy-2.5'
+    implementation gradleApi()
+    implementation localGroovy()
     implementation 'net.java.dev.jna:jna:4.2.2'
     implementation 'net.java.dev.jna:jna-platform:4.2.2'
     implementation 'com.google.guava:guava:32.0.0-jre'
+    
+    // JUnit 4 for JUnit-based tests
+    testImplementation 'junit:junit:4.13.2'
+    // Groovy test support - use same version as Gradle's bundled Groovy
+    testImplementation localGroovy()
+    
+    // Spock version selection based on Gradle version:
+    // - Gradle 8.x uses Groovy 3.0.x -> Spock 2.3-groovy-3.0
+    // - Gradle 9.x uses Groovy 4.0.x -> Spock 2.3-groovy-4.0
+    def spockVersion = project.gradle.gradleVersion.startsWith('9.') 
+        ? '2.3-groovy-4.0' 
+        : '2.3-groovy-3.0'
+    testImplementation "org.spockframework:spock-core:${spockVersion}"
+    
+    // JUnit 5 for JUnit Platform tests (if any)
+    testImplementation(platform('org.junit:junit-bom:5.10.1'))
+    testImplementation('org.junit.jupiter:junit-jupiter')
 }
 
 test {
@@ -70,30 +91,101 @@ sourceSets {
     }
 }
 
-test {
-    useJUnitPlatform()
-}
-
-pluginBundle {
-    website = 'https://github.com/Itiviti/gradle-msbuild-plugin'
-    vcsUrl = 'https://github.com/Itiviti/gradle-msbuild-plugin'
-    tags = ['msbuild', 'c#', '.net']
-
-    mavenCoordinates {
-        groupId = 'com.ullink.gradle'
-    }
-}
-
 gradlePlugin {
+    website = 'https://github.com/i-net-software/gradle-msbuild-plugin'
+    vcsUrl = 'https://github.com/i-net-software/gradle-msbuild-plugin'
+    
     plugins {
         msbuildPlugin {
-            id = 'com.ullink.msbuild'
-            description = project.description
-            displayName = 'Gradle MSBuild Plugin'
+            id = 'de.inetsoftware.msbuild'
             implementationClass = 'com.ullink.MsbuildPlugin'
+            displayName = 'Gradle MSBuild Plugin'
+            description = 'Gradle plugin for MSBuild project build.'
+            tags.set(['msbuild', 'c#', '.net'])
         }
     }
 }
 
+// project.tasks.afterReleaseBuild.dependsOn project.tasks.publishPlugins // Disabled - release plugin not compatible with Gradle 9
+
+publishing {
+    repositories {
+        mavenLocal()
+    }
+}
+
+// Configure Nexus Publish Plugin for Sonatype/Maven Central
+nexusPublishing {
+    repositories {
+        sonatype {
+            // New Central Portal URLs
+            nexusUrl.set(uri("https://ossrh-staging-api.central.sonatype.com/service/local/"))
+            snapshotRepositoryUrl.set(uri("https://central.sonatype.com/repository/maven-snapshots/"))
+            // Credentials - try both property name variations
+            username.set(
+                project.findProperty('ossrhUsername') 
+                    ?: project.findProperty('sonatypeUsername')
+                    ?: System.getenv('SONATYPE_USERNAME') 
+                    ?: System.getenv('OSSRH_USERNAME')
+                    ?: ""
+            )
+            password.set(
+                project.findProperty('ossrhPassword')
+                    ?: project.findProperty('sonatypePassword')
+                    ?: System.getenv('SONATYPE_PASSWORD')
+                    ?: System.getenv('OSSRH_PASSWORD')
+                    ?: ""
+            )
+            // Staging profile ID - should be the UUID from Sonatype, not the domain
+            // Get it from: https://central.sonatype.com/ -> Staging Profiles
+            // Or leave it out to auto-detect by groupId
+            // If you have a staging profile UUID, uncomment and set it:
+            // stagingProfileId.set('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')
+        }
+    }
+}
+
+closeStagingRepositories {
+    closeStagingRepositories.dependsOn 'publishToSonatype'
+    publish.finalizedBy 'closeStagingRepositories'
+}
+
+// Configure signing for Maven Central
+signing {
+    useInMemoryPgpKeys( project.findProperty('signing.key'), project.findProperty('signing.password') )
+    sign publishing.publications
+}
+
+// Configure POM metadata for Maven Central (if publishing there)
+// The java-gradle-plugin automatically creates publications, configure them via afterEvaluate
+afterEvaluate {
+    publishing.publications.all {
+        if (it instanceof MavenPublication) {
+            it.pom {
+                name = 'Gradle MSBuild Plugin'
+                description = 'Gradle plugin for MSBuild project build.'
+                url = 'https://github.com/i-net-software/gradle-msbuild-plugin'
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'inetsoftware'
+                        name = 'i-net software'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:git://github.com/i-net-software/gradle-msbuild-plugin.git'
+                    developerConnection = 'scm:git:ssh://github.com/i-net-software/gradle-msbuild-plugin.git'
+                    url = 'https://github.com/i-net-software/gradle-msbuild-plugin'
+                }
+            }
+        }
+    }
+}
+
+// MSBuild-specific: Process resources depends on vswhere download
 processResources.dependsOn downloadVsWhere
-afterReleaseBuild.dependsOn publishPlugins
