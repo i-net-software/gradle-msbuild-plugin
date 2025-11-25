@@ -1,7 +1,46 @@
 ### 📢 DEPRECATED
 [gradle-dotnet-plugin](https://github.com/Itiviti/gradle-dotnet-plugin) is now available for building projects via dotnet command line tool chains. The plugin supports running nunit, code coverage, nuget restore and push. 
 
-# Gradle MsBuild Plugin [![Build status](https://ci.appveyor.com/api/projects/status/dx29ov4txa120okx/branch/master?svg=true)](https://ci.appveyor.com/project/gluck/gradle-msbuild-plugin/branch/master) [![Build Status](https://travis-ci.org/Itiviti/gradle-msbuild-plugin.svg?branch=master)](https://travis-ci.org/Itiviti/gradle-msbuild-plugin)
+# Gradle MsBuild Plugin
+
+> **Note:** This is a fork of the original [gradle-msbuild-plugin](https://github.com/Itiviti/gradle-msbuild-plugin) by Itiviti/Ullink, updated for **Gradle 8/9 compatibility** and published under the `de.inetsoftware` group ID.
+
+> **Disclaimer:** Most of the changes in this fork, including Gradle 8/9 compatibility fixes and CI/CD pipeline improvements, were created with the assistance of Cursor AI. While the code has been tested and verified, please review changes carefully before using in production environments.
+
+## Fork Information
+
+This fork maintains **forward compatibility** with the original plugin while providing:
+- **Gradle 8/9 compatibility** - Fixed deprecated API usage and compatibility issues
+- **Updated group ID** - Published as `de.inetsoftware.gradle:gradle-msbuild-plugin`
+- **Updated plugin IDs** - Use `de.inetsoftware.msbuild` instead of `com.ullink.msbuild`
+- **Modern CI/CD pipeline** - GitHub Actions workflows replacing Travis CI and AppVeyor
+- **All original functionality preserved** - Drop-in replacement for the original plugin
+
+### Migration from Original Plugin
+
+If you're using the original `com.ullink.gradle:gradle-msbuild-plugin`, you can migrate to this fork by:
+
+1. **Update your buildscript dependency:**
+   ```groovy
+   buildscript {
+       dependencies {
+           classpath 'de.inetsoftware.gradle:gradle-msbuild-plugin:4.8'
+       }
+   }
+   ```
+
+2. **Update plugin application:**
+   ```groovy
+   apply plugin: 'de.inetsoftware.msbuild'
+   // or
+   plugins {
+       id 'de.inetsoftware.msbuild' version '4.8'
+   }
+   ```
+
+All task names and configuration remain the same - only the plugin ID and group ID have changed.
+
+---
 
 This plugin allows to compile an MsBuild project.
 It also supports project file parsing, and some basic up-to-date checks to skip the build.
@@ -27,7 +66,7 @@ To apply the plugin:
 ```groovy
 // Starting from gradle 2.1
 plugins {
-  id 'com.ullink.msbuild' version '3.15'
+  id 'de.inetsoftware.msbuild' version '4.8'
 }
 ```
 
@@ -39,10 +78,10 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.ullink.gradle:gradle-msbuild-plugin:3.15'
+        classpath 'de.inetsoftware.gradle:gradle-msbuild-plugin:4.8'
     }
 }
-apply plugin:'com.ullink.msbuild'
+apply plugin:'de.inetsoftware.msbuild'
 ```
 
 and configure by:
