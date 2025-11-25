@@ -1,7 +1,6 @@
 package com.ullink
 
 import org.gradle.api.GradleException
-import org.gradle.util.VersionNumber
 
 class XbuildResolver implements IExecutableResolver {
 
@@ -55,7 +54,7 @@ class XbuildResolver implements IExecutableResolver {
         ]}
         .findAll { it[0].exists() }
 
-        def foundXBuild = existingXBuilds.find { msbuild.version == null || msbuild.version.equals("${it[1].major}.${it[1].minor}".toString()) }
+        def foundXBuild = existingXBuilds.find { msbuild.version == null || msbuild.version.equals("${it[1][0]}.${it[1][1]}".toString()) }
         if (foundXBuild != null) {
             File file = foundXBuild[0]
             msbuild.logger.info("Resolved xbuild to: ${file.absolutePath}")
@@ -77,9 +76,37 @@ class XbuildResolver implements IExecutableResolver {
         }
         return file.listFiles()
                 .findAll { it.isDirectory() }
-                .collect { [it.absolutePath, VersionNumber.parse(it.name)] }
-                .findAll { !VersionNumber.UNKNOWN.equals(it[1]) }
-                .sort { a, b -> b[1].compareTo(a[1]) }
+                .collect { [it.absolutePath, parseVersion(it.name)] }
+                .findAll { it[1] != null }
+                .sort { a, b -> compareVersions(b[1], a[1]) }
+    }
+
+    // Simple version parsing to replace org.gradle.util.VersionNumber (removed in Gradle 7+)
+    private static List<Integer> parseVersion(String versionString) {
+        try {
+            def parts = versionString.split('\\.')
+            def major = parts.length > 0 ? Integer.parseInt(parts[0]) : 0
+            def minor = parts.length > 1 ? Integer.parseInt(parts[1]) : 0
+            def micro = parts.length > 2 ? Integer.parseInt(parts[2]) : 0
+            return [major, minor, micro]
+        } catch (NumberFormatException e) {
+            return null // Invalid version string
+        }
+    }
+
+    // Compare two version arrays [major, minor, micro]
+    private static int compareVersions(List<Integer> v1, List<Integer> v2) {
+        if (v1 == null && v2 == null) return 0
+        if (v1 == null) return -1
+        if (v2 == null) return 1
+        
+        for (int i = 0; i < Math.max(v1.size(), v2.size()); i++) {
+            def part1 = i < v1.size() ? v1[i] : 0
+            def part2 = i < v2.size() ? v2[i] : 0
+            def cmp = part1 <=> part2
+            if (cmp != 0) return cmp
+        }
+        return 0
     }
 
 

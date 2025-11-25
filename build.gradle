@@ -3,7 +3,7 @@ plugins {
     id 'com.gradle.plugin-publish' version '1.2.1' // Updated for Gradle 9 compatibility
     id 'signing' // Required for Maven Central
     id 'io.github.gradle-nexus.publish-plugin' version '2.0.0' // Automates Sonatype Nexus publishing
-    id 'com.itiviti.dotnet' version '2.0.1' // MSBuild-specific: for ProjectFileParser build
+    id 'com.itiviti.dotnet' version '3.1.0' // MSBuild-specific: for ProjectFileParser build (updated for Gradle 9)
     id 'de.undercouch.download' version '4.1.2' // MSBuild-specific: for vswhere.exe download
     // id 'net.researchgate.release' version '2.6.0' // Temporarily disabled for Gradle 9 compatibility
 }
@@ -44,22 +44,43 @@ dependencies {
     // JUnit 5 for JUnit Platform tests (if any)
     testImplementation(platform('org.junit:junit-bom:5.10.1'))
     testImplementation('org.junit.jupiter:junit-jupiter')
+    testRuntimeOnly('org.junit.platform:junit-platform-launcher') // Required for Gradle 9+
 }
 
 test {
     useJUnitPlatform()
 }
 
+// MSBuild-specific: .NET project build configuration using gradle-dotnet-plugin
 dotnet {
+    workingDir = projectDir // Solution is at project root
     solution = 'ProjectFileParser.sln'
-    projectName = 'ProjectFileParser'
+    configuration = 'Release'
+    restore {
+        beforeBuild = true // Delay restore until build to avoid evaluation phase issues
+    }
 }
 
 tasks.test.dependsOn(tasks.named('dotnetTest'))
 
 tasks.register('generateZip', Zip) {
-    dependsOn tasks.named('dotnetBuild')
-    from { dotnet.mainProject.properties.TargetDir } {
+    description = 'Package .NET build output into zip'
+    dependsOn 'dotnetBuild'
+    // Use the dotnet plugin's mainProject properties if available, otherwise use default location
+    from { 
+        try {
+            def mainProject = project.dotnet?.mainProject
+            if (mainProject?.properties?.TargetDir != null) {
+                file(mainProject.properties.TargetDir)
+            } else {
+                // Fallback to default output location based on solution structure
+                file("src/main/dotnet/ProjectFileParser/bin/Release/net6.0")
+            }
+        } catch (Exception e) {
+            // If dotnet project properties aren't available, use default location
+            file("src/main/dotnet/ProjectFileParser/bin/Release/net6.0")
+        }
+    } {
         include '*.exe'
         include '*.json'
         include '*.dll'
