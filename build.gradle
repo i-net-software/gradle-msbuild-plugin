@@ -21,10 +21,6 @@ description 'Gradle plugin for MSBuild project build.'
 
 ext.dotnetPath = file('src/main/dotnet')
 
-java {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-}
-
 dependencies {
     implementation gradleApi()
     implementation localGroovy()
