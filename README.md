@@ -130,6 +130,85 @@ msbuild {
   // you can take advantage of the ExtensionAware interface
   ext["flp1"] = "LogFile=" + file("${project.name}.errors.log").path + ";ErrorsOnly;Verbosity=diag"
 }
+```
+
+## Accessing Build Artifacts
+
+After the build completes, the plugin automatically collects all build artifacts (DLL, PDB, XML files) from the output directories. This works even when project parsing is skipped (e.g., for old .NET Framework projects).
+
+### Using the `archive()` Method
+
+The simplest way to access build artifacts is using the `archive()` method in your `artifacts` block:
+
+```groovy
+msbuild {
+    // ... configuration ...
+    
+    doLast {
+        artifacts {
+            archives msbuild.archive('Reporting', 'dll')
+            archives msbuild.archive('Reporting', 'pdb')
+            archives msbuild.archive('Reporting', 'xml')
+        }
+    }
+}
+```
+
+The `archive()` method signature:
+- `archive(String projectName, String type = 'dll')` - Returns a `File` object
+- **projectName**: The name of the project (e.g., 'Reporting', 'Tests', 'MyProject')
+- **type**: The artifact type: `'dll'`, `'pdb'`, or `'xml'` (default: `'dll'`)
+
+The method performs case-insensitive matching and partial name matching, so it will find projects even if the exact name doesn't match.
+
+### Accessing All Artifacts
+
+You can also access the full artifacts map directly:
+
+```groovy
+msbuild {
+    doLast {
+        def artifacts = msbuild.artifacts
+        println "Available projects: ${artifacts.keySet()}"
+        
+        // Access specific project artifacts
+        def reportingArtifacts = artifacts['Reporting']
+        def dllFile = reportingArtifacts['dll']
+        def pdbFile = reportingArtifacts['pdb']
+        def xmlFile = reportingArtifacts['xml']
+    }
+}
+```
+
+The `artifacts` property returns a `Map<String, Map<String, File>>`:
+- **Key**: Project name (e.g., 'Reporting', 'Tests')
+- **Value**: Map with keys `'dll'`, `'pdb'`, `'xml'` pointing to `File` objects
+
+### When Project Parsing is Skipped
+
+For old .NET Framework projects (ToolsVersion 14.0 or earlier), project parsing may be automatically skipped because .NET SDK MSBuild cannot parse these projects. The artifact collection still works by scanning the actual build output directories, so you can always use `archive()` or `artifacts` even when `msbuild.projects` is empty.
+
+**Note:** The `archive()` method must be called **after** the build completes (e.g., in `msbuild.doLast` or in a task that depends on `msbuild`), as artifacts are only collected after the build finishes.
+
+### Legacy: Using `msbuild.projects`
+
+For projects where parsing succeeds, you can still access project information via `msbuild.projects`:
+
+```groovy
+msbuild {
+    doLast {
+        def project = msbuild.projects['MyProject']
+        def targetPath = project.properties.TargetPath
+        // ...
+    }
+}
+```
+
+However, `msbuild.projects` may be empty when:
+- Project parsing is skipped for old .NET Framework projects
+- Project parsing fails for any reason
+
+In these cases, use `msbuild.archive()` or `msbuild.artifacts` instead, which work by scanning the actual build output directories.
 
 assemblyInfoPatcher {
   // mandatory if you want to patch your AssemblyInfo.cs/fs/vb
