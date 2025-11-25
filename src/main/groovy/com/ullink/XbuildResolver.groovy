@@ -18,7 +18,99 @@ class XbuildResolver implements IExecutableResolver {
     }
 
     void setupExecutable(Msbuild msbuild) {
-        // First try to find dotnet msbuild (modern .NET SDK on Linux/macOS)
+        // For old MSBuild versions (14.0, 12.0, etc.), ALWAYS use Mono's MSBuild/xbuild
+        // .NET SDK MSBuild cannot build .NET Framework projects (missing reference assemblies)
+        def versionStr = msbuild.version?.toString() ?: ''
+        def useMonoForOldProjects = versionStr && 
+            (versionStr.startsWith('14.') || versionStr.startsWith('12.') || 
+             versionStr.startsWith('4.') || versionStr == '14.0' || versionStr == '12.0')
+        
+        msbuild.logger.debug("MSBuild version check: version='${versionStr}', useMonoForOldProjects=${useMonoForOldProjects}")
+        
+        // Also check if project file indicates .NET Framework (ToolsVersion="14.0" or TargetFramework contains "net4")
+        def isDotNetFrameworkProject = false
+        if (!useMonoForOldProjects) {
+            try {
+                // Check solution file first
+                def solutionFile = msbuild.isSolutionBuild() ? msbuild.getRootedSolutionFile() : null
+                def projectFile = msbuild.isProjectBuild() ? msbuild.getRootedProjectFile() : null
+                
+                // For solutions, check the first project file referenced
+                if (solutionFile && solutionFile.exists()) {
+                    def solutionContent = solutionFile.text
+                    // Check solution file for Visual Studio 14 (indicates .NET Framework project)
+                    if (solutionContent.contains('VisualStudioVersion = 14.') || 
+                        solutionContent.contains('# Visual Studio 14') ||
+                        solutionContent.contains('ToolsVersion="14.0') || 
+                        solutionContent.contains("ToolsVersion='14.0")) {
+                        isDotNetFrameworkProject = true
+                        msbuild.logger.info("Detected .NET Framework project from solution file (Visual Studio 14/ToolsVersion=14.0) - Mono's MSBuild required")
+                    } else {
+                        // Try to find and check a project file from the solution
+                        // Pattern matches: Project(...) = "Name", "path\file.csproj", "{guid}"
+                        def projectPattern = ~/Project\([^)]+\)\s*=\s*"[^"]+",\s*"([^"]+\.csproj)"/
+                        def matcher = projectPattern.matcher(solutionContent)
+                        if (matcher.find()) {
+                            // Handle both Windows (\) and Unix (/) path separators
+                            def projectRelativePath = matcher.group(1).replace('\\', File.separator)
+                            def projectPath = new File(solutionFile.parentFile, projectRelativePath)
+                            if (projectPath.exists()) {
+                                def projectContent = projectPath.text
+                                if (projectContent.contains('ToolsVersion="14.0') || 
+                                    projectContent.contains("ToolsVersion='14.0") ||
+                                    projectContent.contains('TargetFrameworkVersion') || 
+                                    (projectContent.contains('TargetFramework') && (projectContent.contains('net4') || projectContent.contains('netframework')))) {
+                                    isDotNetFrameworkProject = true
+                                    msbuild.logger.info("Detected .NET Framework project from project file (${projectPath.name}) - Mono's MSBuild required")
+                                }
+                            } else {
+                                msbuild.logger.debug("Project file not found: ${projectPath.absolutePath} (resolved from: ${matcher.group(1)})")
+                            }
+                        }
+                    }
+                } else if (projectFile && projectFile.exists()) {
+                    def content = projectFile.text
+                    // Check for .NET Framework indicators
+                    if (content.contains('ToolsVersion="14.0') || 
+                        content.contains("ToolsVersion='14.0") ||
+                        content.contains('TargetFrameworkVersion') ||
+                        (content.contains('TargetFramework') && (content.contains('net4') || content.contains('netframework')))) {
+                        isDotNetFrameworkProject = true
+                        msbuild.logger.info("Detected .NET Framework project from project file - Mono's MSBuild required")
+                    }
+                }
+            } catch (Exception e) {
+                msbuild.logger.debug("Could not check project file for .NET Framework: ${e.message}")
+            }
+        }
+        
+        if (useMonoForOldProjects || isDotNetFrameworkProject) {
+            msbuild.logger.info("Old MSBuild version (${msbuild.version}) or .NET Framework project detected - Mono's MSBuild/xbuild required (dotnet msbuild cannot build .NET Framework projects)")
+            // Try Mono's MSBuild first
+            def msBuildResolver = new PosixMsbuildResolver(msbuild.version)
+            if(msBuildResolver.msBuildFound()) {
+                msBuildResolver.setupExecutable(msbuild)
+                return
+            }
+            // Fall back to Mono's xbuild
+            try {
+                msbuild.executable = 'xbuild.exe'
+                if (msbuild.msbuildDir == null) {
+                    msbuild.msbuildDir = getXBuildDir(msbuild)
+                }
+                return
+            } catch (GradleException e) {
+                // Mono/xbuild not found - fail with clear error message
+                throw new GradleException(
+                    "Cannot build .NET Framework project. " +
+                    "Mono's MSBuild or xbuild is required for .NET Framework projects, but was not found. " +
+                    "Please install Mono SDK or set msbuildDir to point to Mono's MSBuild installation. " +
+                    "dotnet msbuild cannot build .NET Framework projects (missing reference assemblies). " +
+                    "Error: ${e.message}", e)
+            }
+        }
+        
+        // For modern projects, try dotnet msbuild first
         def dotnetPath = findDotnetPath()
         if (dotnetPath) {
             msbuild.executable = 'dotnet'
