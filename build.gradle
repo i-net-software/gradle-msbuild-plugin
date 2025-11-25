@@ -176,6 +176,16 @@ signing {
 // Configure POM metadata for Maven Central (if publishing there)
 // The java-gradle-plugin automatically creates publications, configure them via afterEvaluate
 afterEvaluate {
+    // For snapshots, skip sources and javadoc tasks to minimize published artifacts
+    if (project.version.toString().endsWith('-SNAPSHOT')) {
+        tasks.named('sourcesJar').configure {
+            enabled = false
+        }
+        tasks.named('javadocJar').configure {
+            enabled = false
+        }
+    }
+    
     publishing.publications.all {
         if (it instanceof MavenPublication) {
             it.pom {
