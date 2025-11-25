@@ -68,6 +68,8 @@ class Msbuild extends ConventionTask {
     IExecutableResolver resolver
     @Internal
     Boolean parseProject = true
+    @Internal
+    Map<String, Map<String, File>> buildArtifacts = [:]
     @Inject
     ExecOperations getExecOps() {}
 
@@ -398,6 +400,187 @@ class Msbuild extends ConventionTask {
             exec.commandLine(commandLineArgs)
             exec.workingDir(project.projectDir)
         }
+        
+        // Collect build artifacts after build completes
+        collectBuildArtifacts()
+    }
+    
+    /**
+     * Collects build artifacts (DLL, PDB, XML files) from the build output directories.
+     * This works even when project parsing is skipped for old .NET Framework projects.
+     * 
+     * @return Map of project names to their artifacts (dll, pdb, xml files)
+     */
+    @Internal
+    Map<String, Map<String, File>> getArtifacts() {
+        if (buildArtifacts.isEmpty()) {
+            collectBuildArtifacts()
+        }
+        return buildArtifacts
+    }
+    
+    /**
+     * Collects build artifacts by scanning output directories.
+     * Artifacts are organized by project name (derived from DLL name or directory structure).
+     */
+    private void collectBuildArtifacts() {
+        buildArtifacts.clear()
+        
+        // Determine output directories to search
+        def outputDirs = []
+        
+        // Add destinationDir if specified
+        if (destinationDir != null) {
+            def destDir = project.file(destinationDir)
+            if (destDir.exists()) {
+                outputDirs.add(destDir)
+            }
+        }
+        
+        // Add standard MSBuild output locations
+        def config = configuration ?: 'Release'
+        if (isSolutionBuild()) {
+            // For solutions, check each project directory
+            def solutionFile = getRootedSolutionFile()
+            if (solutionFile?.exists()) {
+                // Try to find project directories from solution file
+                try {
+                    def solutionContent = solutionFile.text
+                    def projectPattern = ~/Project\([^)]+\)\s*=\s*"[^"]+",\s*"([^"]+\.csproj)"/
+                    def matcher = projectPattern.matcher(solutionContent)
+                    while (matcher.find()) {
+                        def projectRelativePath = matcher.group(1).replace('\\', File.separator)
+                        def projectFile = new File(solutionFile.parentFile, projectRelativePath)
+                        if (projectFile.exists()) {
+                            def projectDir = projectFile.parentFile
+                            // Check standard output paths
+                            outputDirs.add(new File(projectDir, "bin/${config}"))
+                            outputDirs.add(new File(projectDir, "bin/${config}/signed"))
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.debug("Could not parse solution file for project directories: ${e.message}")
+                }
+            }
+        } else if (isProjectBuild()) {
+            // For single project builds
+            def projectFile = getRootedProjectFile()
+            if (projectFile?.exists()) {
+                def projectDir = projectFile.parentFile
+                outputDirs.add(new File(projectDir, "bin/${config}"))
+                outputDirs.add(new File(projectDir, "bin/${config}/signed"))
+            }
+        }
+        
+        // Also check root build directories
+        outputDirs.add(new File(project.projectDir, "bin/${config}"))
+        outputDirs.add(new File(project.projectDir, "build/${config}"))
+        
+        // Remove duplicates and non-existent directories
+        outputDirs = outputDirs.findAll { it.exists() }.unique()
+        
+        logger.debug("Scanning for build artifacts in: ${outputDirs.collect { it.absolutePath }}")
+        
+        // Scan for DLL files and collect associated PDB and XML files
+        outputDirs.each { dir ->
+            def dllFiles = []
+            dir.eachFileRecurse { file ->
+                if (file.name.endsWith('.dll') && !file.path.contains('obj')) {
+                    dllFiles.add(file)
+                }
+            }
+            
+            dllFiles.each { dllFile ->
+                // Derive project name from DLL name (remove .dll, handle signed variants)
+                def projectName = dllFile.name.replaceAll(/\.(Signed)?\.dll$/, '').replaceAll(/^inetsoftware\./, '')
+                
+                // If we have parsed projects, try to match by assembly name
+                if (allProjects && !allProjects.isEmpty()) {
+                    def matched = allProjects.find { name, proj ->
+                        def assemblyName = proj.properties?.AssemblyName ?: name
+                        dllFile.name.contains(assemblyName) || assemblyName.contains(projectName)
+                    }
+                    if (matched) {
+                        projectName = matched.key
+                    }
+                }
+                
+                def artifacts = [:]
+                artifacts['dll'] = dllFile
+                
+                // Find associated PDB file
+                def pdbFile = new File(dllFile.parentFile, dllFile.name.replace('.dll', '.pdb'))
+                if (pdbFile.exists()) {
+                    artifacts['pdb'] = pdbFile
+                }
+                
+                // Find associated XML documentation file
+                def xmlFile = new File(dllFile.parentFile, dllFile.name.replace('.dll', '.xml'))
+                if (xmlFile.exists()) {
+                    artifacts['xml'] = xmlFile
+                }
+                
+                // Store artifacts (allow multiple projects with same name by using full path as key if needed)
+                if (buildArtifacts.containsKey(projectName)) {
+                    // If project name already exists, use a more specific key
+                    projectName = "${projectName}_${dllFile.parentFile.name}"
+                }
+                buildArtifacts[projectName] = artifacts
+                
+                logger.debug("Found artifacts for project '${projectName}': ${artifacts.keySet()}")
+            }
+        }
+        
+        logger.info("Collected build artifacts for ${buildArtifacts.size()} project(s): ${buildArtifacts.keySet()}")
+    }
+    
+    /**
+     * Gets a build artifact file for use in the artifacts block.
+     * 
+     * Usage:
+     * <pre>
+     * artifacts {
+     *     archives msbuild.archive('Reporting', 'dll')
+     *     archives msbuild.archive('Reporting', 'pdb')
+     *     archives msbuild.archive('Reporting', 'xml')
+     * }
+     * </pre>
+     * 
+     * @param projectName The name of the project (e.g., 'Reporting', 'Tests')
+     * @param type The artifact type: 'dll', 'pdb', or 'xml' (default: 'dll')
+     * @return The artifact File
+     * @throws GradleException if the artifact is not found
+     */
+    File archive(String projectName, String type = 'dll') {
+        def artifacts = getArtifacts()
+        
+        // Try exact match first
+        def projectArtifacts = artifacts[projectName]
+        
+        // Try case-insensitive match
+        if (!projectArtifacts) {
+            def match = artifacts.find { key, value -> 
+                key.equalsIgnoreCase(projectName) || 
+                key.toLowerCase().contains(projectName.toLowerCase()) ||
+                projectName.toLowerCase().contains(key.toLowerCase())
+            }
+            if (match) {
+                projectArtifacts = match.value
+            }
+        }
+        
+        if (!projectArtifacts) {
+            throw new GradleException("Project '${projectName}' not found in build artifacts. " +
+                "Available projects: ${artifacts.keySet()}")
+        }
+        
+        def file = projectArtifacts[type]
+        if (!file) {
+            throw new GradleException("Artifact type '${type}' not found for project '${projectName}'. " +
+                "Available types: ${projectArtifacts.keySet()}")
+        }
+        
+        return file
     }
 
     @Internal
