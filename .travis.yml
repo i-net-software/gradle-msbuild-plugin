@@ -1,4 +1,0 @@
-dist: xenial
-language: csharp
-script:
-  - ./gradlew -is --console plain build
