@@ -3,23 +3,72 @@ package com.ullink
 import org.gradle.api.GradleException
 
 class XbuildResolver implements IExecutableResolver {
+    
+    private boolean usingDotnetMsbuild = false
 
     @Override
     ProcessBuilder executeDotNet(File exe) {
-        return new ProcessBuilder('mono', exe.toString())
+        if (usingDotnetMsbuild) {
+            // Use dotnet msbuild command (exe parameter is ignored, we use dotnet msbuild directly)
+            return new ProcessBuilder('dotnet', 'msbuild')
+        } else {
+            // Use mono for Mono's xbuild/MSBuild
+            return new ProcessBuilder('mono', exe.toString())
+        }
     }
 
     void setupExecutable(Msbuild msbuild) {
+        // First try to find dotnet msbuild (modern .NET SDK on Linux/macOS)
+        def dotnetPath = findDotnetPath()
+        if (dotnetPath) {
+            msbuild.executable = 'dotnet'
+            msbuild.msbuildDir = null // Not needed for dotnet msbuild
+            usingDotnetMsbuild = true
+            msbuild.logger.info("Auto-detected dotnet SDK, using 'dotnet msbuild'")
+            return
+        }
+        
+        // Fall back to Mono's MSBuild
         def msBuildResolver = new PosixMsbuildResolver(msbuild.version)
         if(msBuildResolver.msBuildFound()) {
             msBuildResolver.setupExecutable(msbuild)
         }
         else {
+            // Last resort: try Mono's xbuild
             msbuild.executable = 'xbuild.exe'
             if (msbuild.msbuildDir == null) {
                 msbuild.msbuildDir = getXBuildDir(msbuild)
             }
         }
+    }
+    
+    /**
+     * Find the dotnet executable path
+     */
+    private String findDotnetPath() {
+        try {
+            def process = ['which', 'dotnet'].execute()
+            process.waitFor()
+            if (process.exitValue() == 0) {
+                def path = process.in.text?.trim()
+                // Verify dotnet is actually executable and can run msbuild
+                if (path) {
+                    try {
+                        def testProcess = [path, 'msbuild', '-version'].execute()
+                        testProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+                        if (testProcess.exitValue() == 0 || testProcess.exitValue() == 1) {
+                            // Exit code 0 or 1 is OK (1 might be "no project file" which is fine)
+                            return path
+                        }
+                    } catch (Exception e) {
+                        // dotnet msbuild not available
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // dotnet not found
+        }
+        return null
     }
 
     public static String getXBuildDir(Msbuild msbuild) {

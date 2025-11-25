@@ -205,10 +205,18 @@ class Msbuild extends ConventionTask {
     def getCommandLineArgs() {
         resolver.setupExecutable(this)
 
-        if (msbuildDir == null) {
+        // For dotnet msbuild, msbuildDir can be null (we use 'dotnet msbuild' directly)
+        if (msbuildDir == null && executable != 'dotnet') {
             throw new GradleException("$executable not found")
         }
-        def commandLineArgs = resolver.executeDotNet(new File(msbuildDir, executable)).command()
+        
+        def commandLineArgs
+        if (executable == 'dotnet') {
+            // Use dotnet msbuild directly
+            commandLineArgs = resolver.executeDotNet(null).command()
+        } else {
+            commandLineArgs = resolver.executeDotNet(new File(msbuildDir, executable)).command()
+        }
 
         commandLineArgs += '/nologo'
 
