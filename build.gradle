@@ -13,6 +13,12 @@ apply plugin: 'maven-publish'
 
 group = 'de.inetsoftware.gradle'
 
+// Configure processResources to handle duplicate plugin descriptor files
+// java-gradle-plugin generates them, but we also have them in source for consistency
+processResources {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
 repositories {
     mavenCentral()
 }
