@@ -3,7 +3,7 @@
 
 # Gradle MsBuild Plugin
 
-> **Note:** This is a fork of the original [gradle-msbuild-plugin](https://github.com/Itiviti/gradle-msbuild-plugin) by Itiviti/Ullink, updated for **Gradle 8/9 compatibility** and published under the `de.inetsoftware` group ID.
+> **Note:** This is a fork of the original [gradle-msbuild-plugin](https://github.com/Itiviti/gradle-msbuild-plugin) by Itiviti, updated for **Gradle 8/9 compatibility** and published under the `de.inetsoftware` group ID.
 
 > **Disclaimer:** Most of the changes in this fork, including Gradle 8/9 compatibility fixes and CI/CD pipeline improvements, were created with the assistance of Cursor AI. While the code has been tested and verified, please review changes carefully before using in production environments.
 

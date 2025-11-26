@@ -1,5 +1,27 @@
 # gradle-msbuild-plugin changelog
 
+# 4.9
+### Added
+* Build artifact collection API with automatic detection of DLL, PDB, and XML files
+* `archive()` method for easy artifact access in Gradle artifacts block
+* Linux support with automatic dotnet msbuild detection
+
+### Fixed
+* Gradle 8 and 9 compatibility issues
+* Mono detection and error handling for .NET Framework projects
+* ProjectFileParser Linux compatibility
+* MSBuild task execution for Gradle 9
+* Snapshot publishing optimizations
+
+### Changed
+* Updated Gradle wrapper from 6.9 to 9.2.1
+* Replaced Travis CI and AppVeyor with GitHub Actions
+* Updated plugin dependencies for Gradle 9 compatibility
+
+# 4.8
+### Changed
+* Version bump for fork maintenance
+
 # 4.7
 ### Improved
 * Print exit code when project parsing fails
