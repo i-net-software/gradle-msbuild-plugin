@@ -129,7 +129,7 @@ class Msbuild extends ConventionTask {
         // Try to resolve/parse, but catch ALL errors and check if they're old project format errors
         try {
             if (projectParsed == null && parseProject) {
-                resolveProject()
+        resolveProject()
             }
         } catch (OldProjectFormatException e) {
             // Old project format detected - skip parsing
@@ -185,7 +185,7 @@ class Msbuild extends ConventionTask {
         }
         return msg.toString()
     }
-    
+
     @Internal
     ProjectFileParser getMainProject() {
         if (resolveProject()) {
@@ -286,17 +286,17 @@ class Msbuild extends ConventionTask {
             if (isSolutionBuild()) {
                 def rootSolutionFile = getRootedSolutionFile()
                 try {
-                    def result = parseProjectFile(rootSolutionFile)
-                    allProjects = result.collectEntries { [it.key, new ProjectFileParser(msbuild: this, eval: it.value)] }
-                    def projectName = getProjectName()
-                    if (projectName == null || projectName.isEmpty()) {
+                def result = parseProjectFile(rootSolutionFile)
+                allProjects = result.collectEntries { [it.key, new ProjectFileParser(msbuild: this, eval: it.value)] }
+                def projectName = getProjectName()
+                if (projectName == null || projectName.isEmpty()) {
+                    parseProject = false
+                } else {
+                    projectParsed = allProjects[projectName]
+                    if (projectParsed == null) {
                         parseProject = false
-                    } else {
-                        projectParsed = allProjects[projectName]
-                        if (projectParsed == null) {
-                            parseProject = false
-                            logger.warn "Project ${projectName} not found in solution"
-                        }
+                        logger.warn "Project ${projectName} not found in solution"
+                    }
                     }
                 } catch (OldProjectFormatException e) {
                     // Old project format - skip parsing
@@ -338,11 +338,11 @@ class Msbuild extends ConventionTask {
             } else if (isProjectBuild()) {
                 def rootProjectFile = getRootedProjectFile()
                 try {
-                    def result = parseProjectFile(rootProjectFile)
-                    allProjects = result.collectEntries {[it.key, new ProjectFileParser(msbuild: this, eval: it.value)]}
-                    projectParsed = allProjects.values().first()
-                     if (!projectParsed) {
-                        logger.warn "Parsed project ${rootProjectFile} is null (not a solution / project build)"
+                def result = parseProjectFile(rootProjectFile)
+                allProjects = result.collectEntries {[it.key, new ProjectFileParser(msbuild: this, eval: it.value)]}
+                projectParsed = allProjects.values().first()
+                 if (!projectParsed) {
+                    logger.warn "Parsed project ${rootProjectFile} is null (not a solution / project build)"
                     }
                 } catch (OldProjectFormatException e) {
                     // Old project format - skip parsing

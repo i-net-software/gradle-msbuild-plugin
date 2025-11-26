@@ -34,8 +34,8 @@ namespace ProjectFileParser
                             };
                         }
                     }
-                    var result = Parse(args[0], parseArgs);
-                    Console.WriteLine(result);
+                var result = Parse(args[0], parseArgs);
+                Console.WriteLine(result);
                 }
             }
             catch (Exception e)

@@ -13,7 +13,7 @@ class XbuildResolver implements IExecutableResolver {
             return new ProcessBuilder('dotnet', 'msbuild')
         } else {
             // Use mono for Mono's xbuild/MSBuild
-            return new ProcessBuilder('mono', exe.toString())
+        return new ProcessBuilder('mono', exe.toString())
         }
     }
 

@@ -15,9 +15,9 @@ namespace ProjectFileParser
                 var versions = MSBuildLocator.QueryVisualStudioInstances().OrderBy(vsInstance => vsInstance.Version);
                 if (versions.Any())
                 {
-                    var latestVsVersion = versions.Last();
-                    MSBuildLocator.RegisterInstance(latestVsVersion);
-                    Console.Error.WriteLine($"Registered latest VS Instance: {latestVsVersion.Name} - {latestVsVersion.Version} - {latestVsVersion.MSBuildPath} - {latestVsVersion.DiscoveryType} - {latestVsVersion.VisualStudioRootPath}");
+                var latestVsVersion = versions.Last();
+                MSBuildLocator.RegisterInstance(latestVsVersion);
+                Console.Error.WriteLine($"Registered latest VS Instance: {latestVsVersion.Name} - {latestVsVersion.Version} - {latestVsVersion.MSBuildPath} - {latestVsVersion.DiscoveryType} - {latestVsVersion.VisualStudioRootPath}");
                     return;
                 }
             }
@@ -92,7 +92,7 @@ namespace ProjectFileParser
                             if (Directory.Exists(msbuildPath))
                             {
                                 return msbuildPath;
-                            }
+            }
                         }
                     }
                 }
