@@ -115,9 +115,10 @@ class Msbuild extends ConventionTask {
             version.startsWith('4.') || version == '14.0' || version == '12.0')
         
         if (useOldMsbuild) {
+            def msbuildType = OperatingSystem.current().windows ? "Windows MSBuild" : "Mono's MSBuild"
             logger.warn("Skipping project file parsing for old MSBuild version (${version}). " +
                 "ProjectFileParser uses .NET SDK MSBuild which cannot parse old-style projects. " +
-                "The build will proceed using Mono's MSBuild.")
+                "The build will proceed using ${msbuildType}.")
             parseProject = false
             // Initialize allProjects as empty map to prevent NPE
             if (allProjects == null) {
@@ -132,8 +133,11 @@ class Msbuild extends ConventionTask {
         resolveProject()
             }
         } catch (OldProjectFormatException e) {
-            // Old project format detected - skip parsing
-            logger.warn("Old-style project format detected. Build will proceed using Mono's MSBuild.")
+            // Old project format detected or dotnet not available - skip parsing
+            def msbuildType = OperatingSystem.current().windows ? "Windows MSBuild" : "Mono's MSBuild"
+            def reason = e.message?.contains("dotnet command not available") ? 
+                "dotnet command not available" : "old-style project format detected"
+            logger.warn("${reason}. Project file parsing will be skipped. Build will proceed using ${msbuildType}.")
             parseProject = false
             if (allProjects == null) {
                 allProjects = [:]
@@ -153,8 +157,9 @@ class Msbuild extends ConventionTask {
                 combinedError.contains('invalidprojectfileexception') || 
                 combinedError.contains('microsoft.build.exceptions') ||
                 (combinedError.contains('failed to parse project') && combinedError.contains('exit code: 255'))) {
+                def msbuildType = OperatingSystem.current().windows ? "Windows MSBuild" : "Mono's MSBuild"
                 logger.warn("Failed to parse project file (old-style project detected, .NET SDK MSBuild cannot parse it). " +
-                    "Build will proceed using Mono's MSBuild.")
+                    "Build will proceed using ${msbuildType}.")
                 parseProject = false
                 if (allProjects == null) {
                     allProjects = [:]
@@ -224,13 +229,38 @@ class Msbuild extends ConventionTask {
         def parserDll = new File(tempDir, 'ProjectFileParser.dll')
         def parseOutputStream = new ByteArrayOutputStream()
         def errorOutputStream = new ByteArrayOutputStream()
-        def parser = execOps.exec { exec ->
-            exec.commandLine('dotnet', '--roll-forward', 'Major', parserDll)
-            exec.args(file.toString(), JsonOutput.toJson(getInitProperties()).replace('"', '\''))
-            exec.standardOutput = parseOutputStream
-            exec.errorOutput = errorOutputStream
-            // We want to be able to print the details of what actually failed, otherwise we won't have this info
-            exec.ignoreExitValue = true
+        def parser
+        try {
+            parser = execOps.exec { exec ->
+                exec.commandLine('dotnet', '--roll-forward', 'Major', parserDll)
+                exec.args(file.toString(), JsonOutput.toJson(getInitProperties()).replace('"', '\''))
+                exec.standardOutput = parseOutputStream
+                exec.errorOutput = errorOutputStream
+                // We want to be able to print the details of what actually failed, otherwise we won't have this info
+                exec.ignoreExitValue = true
+            }
+        } catch (Exception e) {
+            // Handle process start failures (e.g., dotnet command not found, permission denied, etc.)
+            def errorMsg = e.message?.toLowerCase() ?: ''
+            def isCommandNotFound = errorMsg.contains('command') && errorMsg.contains('not found') ||
+                                    errorMsg.contains('cannot run program') ||
+                                    errorMsg.contains('no such file') ||
+                                    errorMsg.contains('executable not found') ||
+                                    errorMsg.contains('not recognized') ||  // Windows: "is not recognized as an internal or external command"
+                                    errorMsg.contains('cannot find the file') ||  // Windows alternative
+                                    (errorMsg.contains('system cannot find') && errorMsg.contains('specified'))  // Windows error
+            
+            if (isCommandNotFound) {
+                logger.warn("dotnet command not found or cannot be executed. " +
+                    "Project file parsing will be skipped. " +
+                    "Make sure dotnet SDK is installed and available in PATH. " +
+                    "Error: ${e.message}")
+                throw new OldProjectFormatException("dotnet command not available - skipping project parsing")
+            } else {
+                // Re-throw other exceptions (IO errors, etc.)
+                logger.error("Failed to execute ProjectFileParser: ${e.message}")
+                throw new GradleException("Failed to execute ProjectFileParser: ${e.message}", e)
+            }
         }
         if (parser.exitValue != 0) {
             def errorOutput = errorOutputStream.toString()

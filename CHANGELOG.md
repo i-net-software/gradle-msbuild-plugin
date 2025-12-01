@@ -12,6 +12,10 @@
 * ProjectFileParser Linux compatibility
 * MSBuild task execution for Gradle 9
 * Snapshot publishing optimizations
+* Fixed `assemblyInfoPatcher` task dependency resolution failure when `dotnet` command is not available
+* Improved error handling for process execution failures when `dotnet` cannot be started (Windows and Linux)
+* Made `assemblyInfoPatcher` provider evaluation defensive to gracefully handle exceptions during configuration phase
+* OS-aware warning messages (Windows MSBuild vs Mono's MSBuild)
 
 ### Changed
 * Updated Gradle wrapper from 6.9 to 9.2.1

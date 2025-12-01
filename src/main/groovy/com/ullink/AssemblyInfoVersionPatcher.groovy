@@ -18,26 +18,64 @@ class AssemblyInfoVersionPatcher extends DefaultTask {
     AssemblyInfoVersionPatcher() {
         projects = project.getObjects().listProperty(String)
         projects.set(project.provider({
-            project.tasks.msbuild.projects.collect { it.key }
+            try {
+                def msbuildTask = project.tasks.findByName('msbuild')
+                if (msbuildTask == null) {
+                    project.logger.debug("AssemblyInfoPatcher: msbuild task not found, using empty list")
+                    return []
+                }
+                msbuildTask.projects.collect { it.key }
+            } catch (Exception e) {
+                // If accessing msbuild.projects fails (e.g., dotnet not available), return empty list
+                // This allows the build to continue without project parsing
+                project.logger.debug("AssemblyInfoPatcher: Could not access msbuild.projects, using empty list. Error: ${e.message}")
+                []
+            }
         }))
 
         files = project.getObjects().listProperty(File)
         files.set(project.provider({
-            projects.get()
-                .collect { project.tasks.msbuild.projects[it] }
-                .collect {
-                    if (it.properties.UsingMicrosoftNETSdk == 'true') {
-                        it.properties.MSBuildProjectFullPath
-                    } else {
-                        it?.getItems('Compile')?.find { Files.getNameWithoutExtension(it.name) == 'AssemblyInfo' }
+            try {
+                def msbuildTask = project.tasks.findByName('msbuild')
+                if (msbuildTask == null) {
+                    project.logger.debug("AssemblyInfoPatcher: msbuild task not found, using empty file list")
+                    return []
+                }
+                projects.get()
+                    .collect { 
+                        try {
+                            msbuildTask.projects[it]
+                        } catch (Exception e) {
+                            project.logger.debug("AssemblyInfoPatcher: Could not access project '${it}', skipping. Error: ${e.message}")
+                            null
+                        }
                     }
-                }
-                .findAll { it != null }
-                .unique()
-                .collect {
-                    project.logger.info("AssemblyInfoPatcher: found file ${it} (${it?.class})")
-                    project.file(it)
-                }
+                    .findAll { it != null }
+                    .collect {
+                        try {
+                            def result
+                            if (it.properties.UsingMicrosoftNETSdk == 'true') {
+                                result = it.properties.MSBuildProjectFullPath
+                            } else {
+                                result = it?.getItems('Compile')?.find { Files.getNameWithoutExtension(it.name) == 'AssemblyInfo' }
+                            }
+                            result
+                        } catch (Exception e) {
+                            project.logger.debug("AssemblyInfoPatcher: Error processing project file, skipping. Error: ${e.message}")
+                            null
+                        }
+                    }
+                    .findAll { it != null }
+                    .unique()
+                    .collect {
+                        project.logger.info("AssemblyInfoPatcher: found file ${it} (${it?.class})")
+                        project.file(it)
+                    }
+            } catch (Exception e) {
+                // If file resolution fails, return empty list
+                project.logger.debug("AssemblyInfoPatcher: Could not resolve files, using empty list. Error: ${e.message}")
+                []
+            }
         }))
 
         fileVersion = project.getObjects().property(String)
